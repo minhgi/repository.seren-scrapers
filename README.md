@@ -11,9 +11,9 @@ These are Seren *provider packages* (Orion, EasyNews/`a4kNewsgroups`, `a4kScrape
 
 | Package | URL |
 |---|---|
-| Orion | `https://raw.githubusercontent.com/minhgi/repository.seren-scrapers/main/repo/zips/Orion/Orion-5.0.1.zip` |
-| EasyNews (a4kNewsgroups) | `https://raw.githubusercontent.com/minhgi/repository.seren-scrapers/main/repo/zips/a4kNewsgroups/a4kNewsgroups-1.4.9.zip` |
 | a4kScrapers | `https://raw.githubusercontent.com/minhgi/repository.seren-scrapers/main/repo/zips/a4kScrapers/a4kScrapers-2.99.127.zip` |
+| EasyNews (a4kNewsgroups) | `https://raw.githubusercontent.com/minhgi/repository.seren-scrapers/main/repo/zips/a4kNewsgroups/a4kNewsgroups-1.4.9.zip` |
+| Orion | `https://raw.githubusercontent.com/minhgi/repository.seren-scrapers/main/repo/zips/Orion/Orion-5.0.1.zip` |
 
 4. **EasyNews needs credentials before it'll return anything.** Back in Manage Provider Packages, select `a4kNewsgroups` → **Configure Package** → enter your EasyNews username/password. Orion and a4kScrapers don't need this step.
 
