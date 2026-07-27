@@ -3,7 +3,7 @@ Seren scrapers - a4kscrapers_easynews_orion
 
 ## Install
 
-These are Seren *provider packages* (Orion, EasyNews/`a4kNewsgroups`, `a4kScrapers`) — not Kodi add-ons. They never appear in Kodi's Add-ons browser. Seren installs and updates them entirely on its own, through its own provider-manager screen. Seren itself must already be installed first.
+These are Seren *provider packages* (`a4kScrapers`, EasyNews/`a4kNewsgroups`, Orion) — not Kodi add-ons. They never appear in Kodi's Add-ons browser. Seren installs and updates them entirely on its own, through its own provider-manager screen. Seren itself must already be installed first.
 
 1. In Seren: **Tools → Provider Tools → Manage Provider Packages → Install Package**.
 2. Choose **Web Location...** — this opens Seren's "Enter Zip URL" prompt.
