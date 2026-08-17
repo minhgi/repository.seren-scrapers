@@ -1,9 +1,9 @@
 {
   "author": "a4k-openproject",
-  "version": "1.4.9",
+  "version": "1.4.12",
   "name": "a4kNewsgroups",
-  "update_directory": "https://raw.githubusercontent.com/minhgi/repository.seren-scrapers/main/repo/zips/a4kNewsgroups/",
-  "remote_meta": "https://raw.githubusercontent.com/minhgi/repository.seren-scrapers/main/repo/a4kNewsgroups/meta.json",
+  "update_directory": "https://raw.githubusercontent.com/minhgi/repository.seren-nixgate/main/repo/zips/a4kNewsgroups/",
+  "remote_meta": "https://raw.githubusercontent.com/minhgi/repository.seren-nixgate/main/repo/a4kNewsgroups/meta.json",
   "seren_version": "3.1.15",
   "setup_extension": "configure.py",
   "services": [],

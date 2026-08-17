@@ -17,6 +17,7 @@ from resources.lib.common.source_utils import (
     remove_country,
 )
 from resources.lib.modules.exceptions import PreemptiveCancellation
+from resources.lib.modules.globals import g
 
 from providerModules.a4kNewsgroups import common
 
@@ -155,6 +156,8 @@ class sources:
 
         stream_url = down_url + quote(f"/{dl_farm}/{dl_port}/{post_hash}{ext}/{post_title}{ext}")
         file_dl = f"{stream_url}|Authorization={quote(self.auth['Authorization'])}"
+        if g.get_bool_setting("scraping.easynews.noseek", False):
+            file_dl += "&seekable=0"
 
         # Title is authoritative; fullres ("1920 x 1080") or width fills in when title
         # has no resolution token. fullres tried first — it is non-zero more often than
