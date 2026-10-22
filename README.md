@@ -11,7 +11,7 @@ These are Seren *provider packages* (`a4kScrapers`, EasyNews/`a4kNewsgroups`, Or
 
 | Package | URL |
 |---|---|
-| a4kScrapers | `https://raw.githubusercontent.com/minhgi/repository.seren-scrapers/main/repo/zips/a4kScrapers/a4kScrapers-2.99.140.zip` |
+| a4kScrapers | `https://raw.githubusercontent.com/minhgi/repository.seren-scrapers/main/repo/zips/a4kScrapers/a4kScrapers-2.99.144.zip` |
 | EasyNews (a4kNewsgroups) | `https://raw.githubusercontent.com/minhgi/repository.seren-scrapers/main/repo/zips/a4kNewsgroups/a4kNewsgroups-1.4.14.zip` |
 | Orion | `https://raw.githubusercontent.com/minhgi/repository.seren-scrapers/main/repo/zips/Orion/Orion-5.0.1.zip` |
 
