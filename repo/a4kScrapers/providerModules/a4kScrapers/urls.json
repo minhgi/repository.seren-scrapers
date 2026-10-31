@@ -296,6 +296,9 @@
       "domains": [
         {
           "base": "https://torrentgalaxy.one"
+        },
+        {
+          "base": "https://therarbg.to"
         }
       ]
     },
