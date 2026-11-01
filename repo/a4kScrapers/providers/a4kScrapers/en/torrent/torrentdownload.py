@@ -9,6 +9,11 @@ from providerModules.a4kScrapers import core
 # truncated); size and seeders are in the row's own cells. Up to two result pages are read; the second
 # only when the first came back (nearly) full - a full page holds 50 rows.
 _FULL_PAGE_MIN_ROWS = 40
+# The site black-holes roughly a third of searches (connection and TLS succeed, no answer ever comes),
+# while a good answer takes well under a second. A short timeout plus one retry turns a lost query
+# into a few seconds' delay instead of a lost query or a 10 s stall.
+_REQUEST_TIMEOUT = 4
+_ATTEMPTS = 2
 _ROW_RE = re.compile(
     r'href="/([0-9A-Fa-f]{40})/([^"]+)".*?'
     r'<td class="tdnormal">[^<]*</td>\s*<td class="tdnormal">([^<]*)</td>\s*<td class="tdseed">([^<]*)</td>',
@@ -19,8 +24,36 @@ class sources(core.DefaultSources):
     def __init__(self, *args, **kwargs):
         # The site answers parallel requests with sporadic 404s (page 1 as well as page 2), so every
         # query of one scrape goes through a single sequential request queue.
-        kwargs.setdefault('request', core.Request(sequental=True, wait=0.5))
+        kwargs.setdefault('request', core.Request(sequental=True, wait=0.5, timeout=_REQUEST_TIMEOUT))
         super(sources, self).__init__(__name__, *args, **kwargs)
+
+    @staticmethod
+    def _forgive_failure(page_url):
+        # a4k's per-domain circuit breaker counts every failed attempt; a retried page must count once,
+        # not twice. Returns False when the breaker has already tripped (no point retrying then).
+        try:
+            from providerModules.a4kScrapers import request as _rq
+            domain = _rq._get_domain(page_url)
+            with _rq._cb_lock:
+                if domain in _rq._cb_dead_until:
+                    return False
+                if _rq._cb_failures.get(domain, 0) > 0:
+                    _rq._cb_failures[domain] -= 1
+        except Exception:
+            pass
+        return True
+
+    def _get_page(self, page_url):
+        response = None
+        for attempt in range(_ATTEMPTS):
+            response = self._request.get(page_url)
+            if response is not None and response.status_code == 200:
+                return response
+            if self._request.exc_msg == 'circuit breaker open':
+                break
+            if attempt < _ATTEMPTS - 1 and not self._forgive_failure(page_url):
+                break
+        return response
 
     def _search_request(self, url, query):
         if not query:
@@ -29,7 +62,7 @@ class sources(core.DefaultSources):
         any_success = False
         results = []
         for page in ['', '&p=2']:
-            response = self._request.get(request_url + page)
+            response = self._get_page(request_url + page)
             if response is None or response.status_code != 200:
                 continue
             any_success = True
