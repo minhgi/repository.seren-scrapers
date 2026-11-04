@@ -52,7 +52,7 @@ def _classify_package(release_title):
 
 
 # ── Comet endpoints ──
-COMET_BASES = ['https://comet.feels.legal', 'https://comet.stremio.ru', 'https://cometfortheweebs.midnightignite.me']
+COMET_BASES = ['https://comet.feels.legal', 'https://comet.forthewizards.uk', 'https://cometfortheweebs.midnightignite.me']
 
 # P2P config: torrent mode, no debrid key — always returns infoHash.
 # resultFormat includes "seeders" so Comet injects 👤 N into the description.
