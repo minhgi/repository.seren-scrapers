@@ -755,6 +755,43 @@ class CoreScraper(object):
                     query_results()
                     self.show_title = original_title
 
+            # Asian drama alias search: Seren passes an ordered list of MyDramaList / TMDb alias titles under
+            # 'asian_drama_search_aliases' (show_aliases was turned into an unordered set above). Same rule as the
+            # anime loop: only when the plain search found few results; titles with no Latin letters clean to ''.
+            elif (not single_query and not simple_info.get('isanime', False)
+                    and simple_info.get('asian_drama_search_aliases') and len(self._results) < 10):
+                seen_clean = {self.show_title.lower()}
+                unique_aliases = []
+                for alias in simple_info['asian_drama_search_aliases']:
+                    clean_alias = source_utils.clean_title(alias)
+                    if not clean_alias or clean_alias.lower() in seen_clean:
+                        continue
+                    seen_clean.add(clean_alias.lower())
+                    unique_aliases.append(clean_alias)
+                    if len(unique_aliases) >= 5:
+                        break
+
+                tools.log('a4kScrapers.%s: asian drama alias loop — %d results so far, %d unique aliases: %s' % (
+                    self.caller_name, len(self._results), len(unique_aliases), unique_aliases), 'notice')
+                def unique_result_keys():
+                    # self._results is only de-duplicated at the very end, so count releases by url / hash
+                    return {r.get('url') or r.get('hash') for r in self._results}
+
+                keys_before_loop = unique_result_keys()
+                for alias in unique_aliases:
+                    if self._cancellation_token.is_cancellation_requested:
+                        break
+                    original_title = self.show_title
+                    self.show_title = alias
+                    tools.log('a4kScrapers.%s: alias search with "%s"' % (self.caller_name, alias), 'notice')
+                    keys_before_alias = unique_result_keys()
+                    query_results()
+                    self.show_title = original_title
+                    tools.log('a4kScrapers.%s: alias "%s" found %d new releases' % (
+                        self.caller_name, alias, len(unique_result_keys() - keys_before_alias)), 'notice')
+                tools.log('a4kScrapers.%s: asian drama alias loop done — %d unique releases before, %d new from aliases' % (
+                    self.caller_name, len(keys_before_loop), len(unique_result_keys() - keys_before_loop)), 'notice')
+
             if not single_query and len(self._results) == 0 and self.show_title_fallback is not None:
                 self.show_title = self.show_title_fallback
                 self.simple_info['show_title'] = self.show_title_fallback
