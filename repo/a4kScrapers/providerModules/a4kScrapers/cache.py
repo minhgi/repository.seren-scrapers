@@ -133,16 +133,26 @@ def __get_cache_core(query):
     parsed_result = {}
     cached_results = []
     for scraper_key in result['d'].keys():
-        key = scraper_keys[scraper_key]
+        # The shared table was filled by other versions of this scraper pack. Scrapers that are not in this
+        # pack's urls (e.g. the retired torrentz2 - which even appears as an empty bucket in current entries)
+        # used to raise KeyError here and discard the whole entry, so every movie lookup returned nothing.
+        key = scraper_keys.get(scraper_key)
         for result_key in result['d'][scraper_key].keys():
             scraper_result = result['d'][scraper_key][result_key]
-            if len(scraper_result) < 2:
+            if len(scraper_result) < 3:
+                continue
+            package = package_keys.get(scraper_result[0])
+            if package is None:
+                continue
+            try:
+                release_title = decode(scraper_result[1])
+            except Exception:
                 continue
             cached_results.append({
-                'provider_name_override': key,
+                'provider_name_override': key or 'cached',
                 'hash': result_key,
-                'package': package_keys[scraper_result[0]],
-                'release_title': decode(scraper_result[1]),
+                'package': package,
+                'release_title': release_title,
                 'size': scraper_result[2],
                 'seeds': 0
             })
