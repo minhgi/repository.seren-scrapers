@@ -76,7 +76,7 @@ _AIOSTREAMS_HEADER = (
 )
 
 # ── Comet fallback endpoints ──
-COMET_BASES = ['https://comet.stremio.ru', 'https://comet.feels.legal', 'https://cometfortheweebs.midnightignite.me']
+COMET_BASES = ['https://comet.feels.legal', 'https://comet.forthewizards.uk', 'https://cometfortheweebs.midnightignite.me']
 _COMET_DEFAULT_PARAMS = (
     'eyJtYXhSZXN1bHRzUGVyUmVzb2x1dGlvbiI6MCwibWF4U2l6ZSI6MCwiY2FjaGVkT25seSI6ZmFsc2Us'
     'InJlbW92ZVRyYXNoIjp0cnVlLCJyZXN1bHRGb3JtYXQiOlsidGl0bGUiLCJtZXRhZGF0YSIsInNpemUi'
