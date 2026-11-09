@@ -305,7 +305,12 @@ class sources:
             post_cleaned = remove_country(post_cleaned, country)
             post_cleaned = remove_from_title(post_cleaned, year)
         meta_cleaned = clean_title(meta_title)
-        titles_cleaned = [meta_cleaned, *[clean_title(alias) for alias in aliases]]
+        # Drop empty cleaned titles: CJK/Thai/Korean aliases clean to "" (clean_title strips
+        # non-ASCII), and "" == the empty show-name part of a nameless release such as
+        # "S01E07 Awkward Phase", which let any S01E07 file through for Asian dramas.
+        titles_cleaned = [
+            t for t in (meta_cleaned, *[clean_title(alias) for alias in aliases]) if t
+        ]
         episode_regex = r"(.*)((?:s(\d+) ?e(\d+))|(?:season ?(\d+) ?(?:episode|ep) ?(\d+))|(?: (\d+) ?x ?(\d+)))(.*)"
 
         split = re.split(rf"{simple_info.get('year')}", post_cleaned, 1, re.I)[0]
