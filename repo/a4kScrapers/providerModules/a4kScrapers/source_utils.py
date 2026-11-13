@@ -4,6 +4,7 @@ import random
 import re
 import inspect
 import os
+import html
 import unicodedata
 import string
 import sys
@@ -518,9 +519,14 @@ def get_filter_show_pack_fn(simple_info):
         simple_info['show_title'], \
         simple_info['season_number'], \
         simple_info['show_aliases'], \
-        simple_info['no_seasons'], \
+        simple_info.get('no_seasons'), \
         simple_info['country'], \
         simple_info['year']
+
+    # upstream a4kScrapers 2.98.0: a missing/non-numeric no_seasons falls back to the requested season
+    no_seasons = str(no_seasons or '').strip()
+    if not no_seasons.isdigit():
+        no_seasons = season
 
     titles = list(alias_list)
     titles.insert(0, show_title)
@@ -658,6 +664,141 @@ def get_filter_show_pack_fn(simple_info):
 #  Otaku-style anime torrent classifier
 # ═══════════════════════════════════════════════════════════════════════════
 
+_ANIME_CJK_RE = re.compile(u'[぀-ヿ㐀-䶿一-鿿가-힯]')
+_ANIME_YEAR_TAIL_RE = re.compile(r'\s(?:19|20)\d{2}$')
+
+
+def _anime_norm_name(text):
+    """Lower-case, unescaped (&#39;), accent-free text with every run of punctuation/space collapsed to one space; CJK kept."""
+    try:
+        text = html.unescape(text or u'')
+    except Exception:
+        text = text or u''
+    text = unicodedata.normalize('NFKD', unicodedata.normalize('NFKC', text).casefold())
+    text = u''.join(c for c in text if not unicodedata.combining(c))
+    return re.sub(r'[\W_]+', ' ', text).strip()
+
+
+_ANIME_NAME_FORMS_CACHE = {}
+
+
+def anime_show_name_forms(show_title, show_aliases):
+    """Names a release of this show may carry, as (latin_names, cjk_names), both lists of normalised strings.
+    Latin names: at least 3 letters/digits once spaces are removed, not purely digits (a bare '86' would accept any show's
+    episode 86). CJK names: at least 2 characters. A leading 'the ' and a trailing year are dropped."""
+    key = (show_title or u'', tuple(show_aliases or ()))
+    if key in _ANIME_NAME_FORMS_CACHE:
+        return _ANIME_NAME_FORMS_CACHE[key]
+    latin, cjk = [], []
+    for name in [show_title] + list(show_aliases or ()):
+        if not isinstance(name, str):
+            continue
+        n = _anime_norm_name(name)
+        if not n:
+            continue
+        variants = {n}
+        v = _ANIME_YEAR_TAIL_RE.sub('', n)
+        variants.add(v)
+        for x in list(variants):
+            if x.startswith('the '):
+                variants.add(x[4:])
+        for v in variants:
+            compact = v.replace(' ', '')
+            if _ANIME_CJK_RE.search(v):
+                if len(compact) >= 2 and v not in cjk:
+                    cjk.append(v)
+            elif len(compact) >= 3 and not compact.isdigit() and v not in latin:
+                latin.append(v)
+    if len(_ANIME_NAME_FORMS_CACHE) > 64:
+        _ANIME_NAME_FORMS_CACHE.clear()
+    _ANIME_NAME_FORMS_CACHE[key] = (latin, cjk)
+    return latin, cjk
+
+
+_ANIME_NUMERIC_NAMES_CACHE = {}
+# Multi-season packs: 'S01-04', 'S01+02+03', 'Seasons 1-3', 'Season 1 & 2'. The numbers are seasons, not an episode range.
+# No '~' separator ('2nd Season 1~13' = episodes) and no season token right after an ordinal ('2nd Season (1-13)').
+_ANIME_SEASON_LIST_RE = re.compile(r'(?i)(?<!\d(?:st|nd|rd|th)[ ._])\b(?:seasons?[ ._]?|s)0?\d{1,2}(?:(?:-|\s?[+&,]\s?)(?:s(?:easons?)?[ ._]?)?0?\d{1,2})+(?!\d)')
+
+
+def _anime_season_list(token):
+    parts = re.split(r'(\d{1,2})', token)
+    nums = [int(x) for x in parts[1::2]]
+    seps = parts[2::2]
+    out = []
+    for i, n in enumerate(nums):
+        if i and re.search(r'[-~]', seps[i - 1]) and nums[i - 1] < n <= 30:
+            out.extend(x for x in range(nums[i - 1] + 1, n + 1) if x not in out)
+        elif 0 < n <= 30 and n not in out:
+            out.append(n)
+    return out
+
+
+_ANIME_YEAR_RANGE_RE = re.compile(r'(?<!\d)(?:19|20)\d\d\s?-\s?(?:19|20)\d\d(?!\d)')
+
+
+# Numbers that are not episode numbers: resolution (1080p, 1280x720, 4k), codec (x265, H 264), bit depth (10bit), audio (AAC2.0, DDP2 0).
+# clean_tags() turns the brackets of '[1080p]' into spaces, so these end up next to the season/episode number ('s01 1080p').
+_ANIME_NOISE_RE = re.compile(r'(?i)(?<![a-z0-9])(?:\d{3,4}p|\d{3,4}x\d{3,4}|[hx][ .]?26[45]|\d{1,2}[ -]?bits?|[48]k|(?:dd|ddp|aac|ac3|eac3|flac|dts|opus)[ .]?\d(?:[ .]\d)?)(?![a-z0-9])')
+# 'S3 - 11' (SubsPlease-style: season marker, spaced dash, episode) is season 3 episode 11, not the episode range 3-11
+_ANIME_SEASON_DASH_RE = re.compile(r'(?i)\b(?:s(?:eason)?[ ._-]?\d{1,2})(?=\s+-\s+\d)')
+_ANIME_LEADING_TAGS_RE = re.compile(r'^(?:\s*[\[\(][^\]\)]*[\]\)])+')
+
+
+def anime_show_numeric_names(show_title, show_aliases):
+    """Purely numeric names of this show ('86' for 86: Eighty Six), 2 to 4 digits. They are not used as plain names (a bare '86' would
+    accept any show's episode 86); anime_title_matches accepts them only as the start of a release title followed by a year
+    ('86 2021 - 12 end')."""
+    key = (show_title or u'', tuple(show_aliases or ()))
+    if key in _ANIME_NUMERIC_NAMES_CACHE:
+        return _ANIME_NUMERIC_NAMES_CACHE[key]
+    names = []
+    for name in [show_title] + list(show_aliases or ()):
+        if not isinstance(name, str):
+            continue
+        n = _ANIME_YEAR_TAIL_RE.sub('', _anime_norm_name(name))
+        if n.isdigit() and 2 <= len(n) <= 4 and n not in names:
+            names.append(n)
+    if len(_ANIME_NUMERIC_NAMES_CACHE) > 64:
+        _ANIME_NUMERIC_NAMES_CACHE.clear()
+    _ANIME_NUMERIC_NAMES_CACHE[key] = names
+    return names
+
+
+def anime_title_matches(release_title, simple_info):
+    """Does this release carry the requested show's title or one of its aliases? The anime classifier below only reads episode,
+    season and part numbers, and the Nyaa-style broad queries return other shows with the same episode number ('Ghost in the
+    Shell - 07' for 07-Ghost, 'Konyaku Haki sareta Reijou ... S01E05' for Oshi no Ko). Fails open (True) when the show has no
+    usable name or anything goes wrong, so a missing alias list never empties a scrape."""
+    try:
+        latin, cjk = anime_show_name_forms((simple_info or {}).get('show_title'), (simple_info or {}).get('show_aliases'))
+        if not latin and not cjk:
+            return True
+        title = _anime_norm_name(release_title)
+        padded = u' %s ' % title
+        compact = title.replace(' ', '')
+        for name in latin:
+            if u' %s ' % name in padded:
+                return True
+            flat = name.replace(' ', '')
+            # 'Go-toubun' / 'Gotoubun', 'Re:Zero' / 'ReZero': same name with the spaces spelled differently
+            if len(flat) >= 6 and flat in compact:
+                return True
+        for name in cjk:
+            if name.replace(' ', '') in compact:
+                return True
+        # A numeric show name ('86'): only as the start of the release (after any [Group] tags) followed by a year, '86 2021 - 12 end'
+        numeric = anime_show_numeric_names((simple_info or {}).get('show_title'), (simple_info or {}).get('show_aliases'))
+        if numeric:
+            head = _anime_norm_name(_ANIME_LEADING_TAGS_RE.sub(u'', html.unescape(release_title or u'')))
+            for name in numeric:
+                if re.match(r'%s (?:19|20)\d{2}(?: |$)' % re.escape(name), head):
+                    return True
+        return False
+    except Exception:
+        return True
+
+
 def anime_filter_sources(release_title, simple_info, ep_zfill, ss_zfill, abs_zfill=None):
     """
     Classify an anime torrent by extracting season, episode, and part/cour
@@ -687,6 +828,15 @@ def anime_filter_sources(release_title, simple_info, ep_zfill, ss_zfill, abs_zfi
     """
     title = release_title.lower()
 
+    # ── Right show? (a4kScrapers 2.99.154) ─────────────────────────────────
+    if not anime_title_matches(release_title, simple_info):
+        tools.log('a4kScrapers animetitle]: dropped, not this show: %s' % release_title, 'debug')
+        return None
+
+    # A year right after a numeric show name ('86 2021 - 12 end') is not an episode number (a4kScrapers 2.99.155)
+    for _num_name in anime_show_numeric_names((simple_info or {}).get('show_title'), (simple_info or {}).get('show_aliases')):
+        title = re.sub(r'^((?:\s*[\[\(][^\]\)]*[\]\)])*\s*%s\s*)[\[\(]?(?:19|20)\d{2}[\]\)]?' % re.escape(_num_name), r'\1', title)
+
     # ── Target values ──────────────────────────────────────────────────────
     try:
         req_ep = int(ep_zfill) if ep_zfill else None
@@ -704,7 +854,7 @@ def anime_filter_sources(release_title, simple_info, ep_zfill, ss_zfill, abs_zfi
     # ── Regexes (ported directly from Otaku Testing filter_sources) ────────
     _re_season = re.compile(r'(?i)\b(?:s(?:eason)?[ ._-]?(\d{1,2}))(?!\d)')
     _re_episode = re.compile(r'''(?ix)
-        (?:^|[\s._-])(?:e(?:p)?\s?(\d{1,4}))   # E12, EP12
+        (?:^|[\s._-])(?:e(?:p)?\s?(\d{1,4})(?:v\d)?(?![a-z0-9]))   # E12, EP12, E12v2 (not a CRC tag such as 'e22812b7', 2.99.160)
         |
         -\s?(\d{1,4})\b                          # - 12  (fansub dash)
         |
@@ -738,6 +888,20 @@ def anime_filter_sources(release_title, simple_info, ep_zfill, ss_zfill, abs_zfi
 
     # ── Episode extraction (remove part tokens from working copy first) ────
     title_no_parts = _re_part.sub('', title)
+    # Multi-season packs ('S01-04', 'S01+02', 'Seasons 1-3'): the numbers are seasons, not the episode range 1-4
+    # (a4kScrapers 2.99.159)
+    for _sl in _ANIME_SEASON_LIST_RE.finditer(title):
+        for _sn in _anime_season_list(_sl.group(0)):
+            if _sn not in extracted_seasons:
+                extracted_seasons.append(_sn)
+    title_no_parts = _ANIME_SEASON_LIST_RE.sub(' ', title_no_parts)
+    # A release year range '(2022-2023)' is not the episode range 2022-2023. Only when the title also names a season, so a
+    # 'Movie Collection (2006-2010) Movies 01-04' without a season marker keeps its old reading (a4kScrapers 2.99.160)
+    if extracted_seasons:
+        title_no_parts = _ANIME_YEAR_RANGE_RE.sub(' ', title_no_parts)
+    # Resolution / codec / bit-depth / audio numbers are not episode numbers: 'S01 1080p' was read as episode 1080 and
+    # 'BS11 1280x720' as the range 11-1280 (a4kScrapers 2.99.156)
+    title_no_parts = _ANIME_NOISE_RE.sub(' ', title_no_parts)
     extracted_episode = None
     ep_is_range       = False
     range_start = range_end = None
@@ -751,7 +915,7 @@ def anime_filter_sources(release_title, simple_info, ep_zfill, ss_zfill, abs_zfi
 
     # Priority 2: explicit batch range "01-12" or "01~12"
     if extracted_episode is None:
-        rm = _re_ep_range.search(title_no_parts)
+        rm = _re_ep_range.search(_ANIME_SEASON_DASH_RE.sub(' ', title_no_parts))   # 'S3 - 11' is not the range 3-11 (a4kScrapers 2.99.157)
         if rm:
             start, end = int(rm.group(1)), int(rm.group(2))
             if (start not in extracted_parts and end not in extracted_parts
@@ -762,18 +926,22 @@ def anime_filter_sources(release_title, simple_info, ep_zfill, ss_zfill, abs_zfi
     # Priority 3: generic episode pattern catch-all
     if extracted_episode is None and not ep_is_range:
         nums = []
+        dash_nums = set()
         for match in _re_episode.findall(title_no_parts):
-            for grp in match:
+            for gi, grp in enumerate(match):
                 if grp:
                     try:
                         n = int(grp)
                         if n not in extracted_parts:
                             nums.append(n)
+                            if gi == 1:
+                                dash_nums.add(n)
                     except ValueError:
                         pass
-        # Drop numbers that duplicate a detected season
+        # Drop numbers that duplicate a detected season; a number after a dash ('S4 - 04') is the episode even when it
+        # equals the season (a4kScrapers 2.99.160)
         if extracted_seasons and nums:
-            nums = [n for n in nums if n not in extracted_seasons]
+            nums = [n for n in nums if n not in extracted_seasons or n in dash_nums]
         if nums:
             if len(nums) >= 2 and nums[0] < nums[-1]:
                 # Two numbers, ascending — likely a range
@@ -803,10 +971,13 @@ def anime_filter_sources(release_title, simple_info, ep_zfill, ss_zfill, abs_zfi
     # Leniency: season 1 anime rarely include "Season 1" in their titles —
     # skipping the check avoids discarding a large portion of valid results.
     # Also skip for TVDB season-0 / absolute-numbering shows.
+    # (a4kScrapers 2.99.158) The season-1 leniency only applies when Seren moved the request into a later entry / cour
+    # (simple_info['alternative_season'] is set, e.g. 86 Part 2: fansubs write 'S2 - 01' for a season-1 request). For a plain
+    # Trakt season-1 request a file that says S3 is another season, so 'S03E05' / 'S3 - 07' of another season is dropped.
     thetvdb_season = simple_info.get('thetvdb_season')
     skip_season = (
         req_season is None
-        or req_season == 1
+        or (req_season == 1 and simple_info.get('alternative_season'))
         or str(thetvdb_season) in ('0', 'a')
     )
     if not skip_season and extracted_seasons:
@@ -832,6 +1003,10 @@ def anime_filter_sources(release_title, simple_info, ep_zfill, ss_zfill, abs_zfi
 
     # ── Season marker only, no episode number → season pack ───────────────
     if extracted_seasons:
+        # A pack that names other seasons only ('S02' for a season-1 request) is not ours; a multi-season pack that contains
+        # the requested season ('S01 + S02') is. Not applied for TVDB season-0 / absolute-numbering shows. (a4kScrapers 2.99.156)
+        if req_season is not None and str(thetvdb_season) not in ('0', 'a') and req_season not in extracted_seasons:
+            return None
         return 'season'
 
     # ── Part only, no other info → pass through ────────────────────────────

@@ -92,6 +92,14 @@ from requests.compat import urlparse, urlunparse
 
 _head_checks = {}
 
+# Debrid keys ride in provider URLs (e.g. torrentio's premiumize=KEY, resolve links): mask them in logs.
+# Ported from upstream a4kScrapers 2.100.0.
+_redact_re = re.compile(r'((?:premiumize|realdebrid|alldebrid)(?:=|%3D))(?:(?!%7C)[^|/?&])+|(/resolve/[^/]+/)[^/]+', re.I)
+
+def redact(text):
+    """Mask debrid API keys in a url or message before it is logged."""
+    return _redact_re.sub(lambda m: (m.group(1) or m.group(2)) + '***', str(text))
+
 # ── Per-domain circuit breaker (added v2.99.60) ─────────────────────────────
 # Goal: when a host (e.g. animetosho.org) is unreachable, every scraper firing
 # multiple queries against it pays the full TCP-retry cost on each call,
@@ -351,7 +359,7 @@ class Request(object):
 
               if 'Detected the new Cloudflare challenge.' in exc and self.request_time < 2:
                   cf_retries -= 1
-                  tools.log('cf_new_challenge_retry: %s' % request.url, 'notice')
+                  tools.log('cf_new_challenge_retry: %s' % redact(request.url), 'notice')
                   return self._request_core(request, sequental, cf_retries)
               elif 'Cloudflare' in exc or '!!Loop Protection!!' in exc:
                   self.exc_msg = 'failed Cloudflare protection'
@@ -360,12 +368,12 @@ class Request(object):
               elif 'ConnectTimeout' in exc or 'ReadTimeout' in exc:
                   self.exc_msg = 'request timed out'
               else:
-                  self.exc_msg = 'failed - %s' % exc
+                  self.exc_msg = 'failed - %s' % redact(exc)
             elif 'response status code 500' in self.exc_msg:
                   cf_retries -= 1
                   return self._request_core(request, sequental, cf_retries)
 
-            tools.log('%s %s' % (request.url, self.exc_msg), 'notice')
+            tools.log(redact('%s %s' % (request.url, self.exc_msg)), 'notice')
 
             _circuit_record_failure(cb_domain)
             return response_err
@@ -394,7 +402,7 @@ class Request(object):
             return (url, 500)
 
         url = _get_domain(url)
-        tools.log('HEAD: %s' % url, 'debug')
+        tools.log('HEAD: %s' % redact(url), 'debug')
         request = lambda _: self._request.head(url, timeout=2, allow_redirects=True)
         request.url = url
 
@@ -469,14 +477,14 @@ class Request(object):
             )
         )
 
-        tools.log('GET: %s' % url, 'debug')
+        tools.log('GET: %s' % redact(url), 'debug')
         request = lambda x: _get(self._cfscrape, url, headers, self._timeout, allow_redirects, x)
         request.url = url
 
         return self._request_core(request)
 
     def post(self, url, data, headers={}):
-        tools.log('POST: %s' % url, 'debug')
+        tools.log('POST: %s' % redact(url), 'debug')
         request = lambda _: self._cfscrape.post(url, data, headers=headers, timeout=self._timeout)
         request.url = url
         return self._request_core(request)
