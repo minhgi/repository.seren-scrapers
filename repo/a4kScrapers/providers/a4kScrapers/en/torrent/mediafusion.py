@@ -140,6 +140,14 @@ def _is_invalid_sentinel(streams):
             or 'Invalid MediaFusion configuration' in (s.get('description') or ''))
 
 
+def _stream_has_hash(stream):
+    """True when _parse_stream can get a torrent hash out of this stream (same two
+    sources it uses: the 'infoHash' field, then a 40-hex string inside 'url')."""
+    if stream.get('infoHash'):
+        return True
+    return bool(_HASH_RE.search(stream.get('url') or ''))
+
+
 def _get_mf_token():
     """
     Return the user's MediaFusion secret token from Seren settings, or None if unset.
@@ -205,9 +213,13 @@ class sources(core.DefaultSources):
         Fallback fires when:
           (a) no user token set in Seren settings,
           (b) ElfHosted returns a network error / timeout, or
-          (c) ElfHosted returns the invalid-config sentinel (expired/wrong token).
-        Valid ElfHosted responses — including empty {streams:[]} — bypass the fallback
-        so a genuine "no results" does not incorrectly trigger Midnight.
+          (c) ElfHosted returns the invalid-config sentinel (expired/wrong token), or
+          (d) ElfHosted returns streams but none carries a torrent hash (an instance
+              running MediaFusion 6.2.0+ with HIDE_TORRENT_INFO_HASHES hands out opaque
+              playback URLs; _parse_stream would reject every one of them).
+        Valid ElfHosted responses that carry at least one hash — including empty
+        {streams:[]} — bypass the fallback so a genuine "no results" does not
+        incorrectly trigger Midnight.
         Note: Midnight is torrent-only (no debrid service configured); it provides
         additional torrent sources that Seren cache-checks independently.
         """
@@ -220,10 +232,14 @@ class sources(core.DefaultSources):
             data = _http_get(url)
             if data is not None:
                 streams = data.get('streams', [])
-                if not _is_invalid_sentinel(streams):
+                if _is_invalid_sentinel(streams):
+                    _log('ElfHosted token invalid or expired — falling back to Midnight')
+                elif streams and not any(_stream_has_hash(s) for s in streams):
+                    _log('ElfHosted returned %d streams with no torrent hash (hash privacy) '
+                         '— falling back to Midnight' % len(streams))
+                else:
                     _log('elfhosted -> %d streams' % len(streams))
                     return streams  # valid response (may be empty) — no fallback
-                _log('ElfHosted token invalid or expired — falling back to Midnight')
             else:
                 _log('ElfHosted request failed — falling back to Midnight')
         else:
